@@ -1,0 +1,6 @@
+{
+  "name": "owox-test-task",
+  "short_name": "owox-test-task",
+  "start_url": "/",
+  "display": "standalone"
+}

@@ -1,0 +1,221 @@
+<link rel="import" href="../../bower_components/polymer/polymer-element.html">
+<link rel="import" href="../../bower_components/polymer/lib/elements/dom-repeat.html">
+
+<dom-module id="owox-test-task-app">
+  <template>
+      <style>
+        :host {
+            display: block;
+        }
+        .bar {
+            fill: blue;
+        }
+        table {
+            width: 100%;
+            border: 1px solid black;
+            border-collapse: collapse;
+            margin-bottom: 50px;
+        }
+        caption {
+            font-weight: bold;
+        }
+        td {
+            border: 1px solid black;
+            text-align: center;
+            padding: 5px;
+        }
+        .table-headers {
+            font-weight: bold;
+        }
+        .chart-controls {
+            width: 100%;
+        }
+        .chart-controls button {
+            outline: none;
+            display: inline-block;
+            height: 42px;
+            line-height: 32px;
+            border-radius: 2px;
+            background-color: #fff;
+            color: #646464;
+            margin: 20px 10px;
+            cursor: pointer;
+        }
+        .chart-controls h4 {
+            text-align: center;
+        }
+        .chart-container {
+            width: 960px;
+            margin: 0 auto;
+        }
+      </style>
+      <table>
+          <caption>GitHub search results with query 'OWOX'</caption>
+          <tr class="table-headers">
+              <td>Full name</td>
+              <td>Score</td>
+          </tr>
+          <template is="dom-repeat" items="[[jsonData]]">
+              <tr>
+                <td>[[item.full_name]]</td>
+                <td>[[item.score]]</td
+              </tr>
+          </template>
+      </table>
+      <div class="chart-controls">
+          <h4>Data visualised with D3.js v4</h4>
+          <button id="btn1" on-click="handleBtn1Click">Show chart 1 (bubble)</button>
+          <button id="btn2" on-click="handleBtn2Click">Show chart 2 (bar)</button>
+      </div>
+      <div class="chart-container">
+          <svg display="none" width="960" height="720" font-family="sans-serif" font-size="10" text-anchor="middle" id="bubble"></svg>
+          <svg display="none" width="960" height="720" font-family="sans-serif" font-size="10" text-anchor="middle" id="bar"></svg>
+      </div>
+  </template>
+
+  <script>
+    class OwoxTestTaskApp extends Polymer.Element {
+        ready() {
+            super.ready();
+            async function fetchAsync () {
+              let response = await fetch(`https://api.github.com/search/repositories?q=owox`);
+              let data = await response.json();
+              return data;
+           }
+           fetchAsync()
+             .then((data) => {
+                 this.jsonData = data.items;
+             })
+             .catch(error => console.log(error.message));
+
+             /*D3 code block*/
+
+            let bubbleChartParent = d3.select(this.$.bubble),
+                bubbleWidth = +bubbleChartParent.attr("width"),
+                bubbleHeight = +bubbleChartParent.attr("height"),
+                margin = {top: 20, right: 20, bottom: 30, left: 40},
+                radius = bubbleWidth/2;
+
+            let format = d3.format(",d");
+            let color = d3.scaleOrdinal(d3.schemeCategory20c);
+            let pack = d3.pack()
+                .size([bubbleWidth, bubbleHeight])
+                .padding(1.5);
+
+            d3.csv("data.csv", function(d) {
+              d.value = +d.value;
+              if (d.value) return d;
+            }, function(error, classes) {
+              if (error) throw error;
+
+              let root = d3.hierarchy({children: classes})
+                  .sum(function(d) { return d.value; })
+                  .each(function(d) {
+                    if (id = d.data.id) {
+                      var id, i = id.lastIndexOf(".");
+                      d.id = id;
+                      d.package = id.slice(0, i);
+                      d.class = id.slice(i + 1);
+                    }
+                  });
+
+              let node = bubbleChartParent.selectAll(".node")
+                .data(pack(root).leaves())
+                .enter().append("g")
+                  .attr("class", "node")
+                  .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+
+              node.append("circle")
+                  .attr("id", function(d) { return d.id; })
+                  .attr("r", function(d) { return d.r; })
+                  .style("fill", function(d) { return color(d.package); });
+
+              node.append("clipPath")
+                  .attr("id", function(d) { return "clip-" + d.id; })
+                .append("use")
+                  .attr("xlink:href", function(d) { return "#" + d.id; });
+
+              node.append("text")
+                  .attr("clip-path", function(d) { return "url(#clip-" + d.id + ")"; })
+                .selectAll("tspan")
+                .data(function(d) { return d.class.split(/(?=[A-Z][^A-Z])/g); })
+                .enter().append("tspan")
+                  .attr("x", 0)
+                  .attr("y", function(d, i, nodes) { return 13 + (i - nodes.length / 2 - 0.5) * 10; })
+                  .text(function(d) { return d; });
+
+              node.append("title")
+                  .text(function(d) { return d.id + "\n" + format(d.value); });
+            });
+
+            /*Bar chart */
+
+            let barChartParent = d3.select(this.$.bar),
+                barWidth = +barChartParent.attr("width") - margin.left - margin.right,
+                barHeight = +barChartParent.attr("height") - margin.top - margin.bottom;
+            let x = d3.scaleBand().rangeRound([0, barWidth]).padding(0.1),
+                y = d3.scaleLinear().rangeRound([barHeight, 0]);
+
+            let g = barChartParent.append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            d3.csv("data.csv", function(d) {
+              d.value = +d.value;
+              return d;
+            }, function(error, data) {
+              if (error) throw error;
+
+              x.domain(data.map(function(d) { return d.id[0]; }));
+              y.domain([0, d3.max(data, function(d) { return d.value; })]);
+
+              g.append("g")
+                  .attr("class", "axis axis--x")
+                  .attr("transform", "translate(0," + barHeight + ")")
+                  .call(d3.axisBottom(x));
+
+              g.append("g")
+                  .attr("class", "axis axis--y")
+                  .call(d3.axisLeft(y).ticks(100))
+                .append("text")
+                  .attr("transform", "rotate(-90)")
+                  .attr("y", 6)
+                  .attr("dy", "0.71em")
+                  .attr("text-anchor", "end")
+                  .text("Value");
+
+              g.selectAll(".bar")
+                .data(data)
+                .enter().append("rect")
+                  .attr("class", "bar")
+                  .attr("x", function(d) { return x(d.id[0]); })
+                  .attr("y", function(d) { return y(d.value); })
+                  .attr("width", x.bandwidth())
+                  .attr("height", function(d) { return barHeight - y(d.value); });
+            });
+        }
+
+        static get is() { return 'owox-test-task-app'; }
+
+        static get properties() {
+            return {
+              jsonData: {
+                  type: Array,
+                  value: undefined
+              }
+            };
+        }
+
+        handleBtn1Click() {
+            d3.select(this.$.bubble).attr('display', 'block');
+            d3.select(this.$.bar).attr('display', 'none');
+        }
+
+        handleBtn2Click() {
+            d3.select(this.$.bubble).attr('display', 'none');
+            d3.select(this.$.bar).attr('display', 'block');
+        }
+    }
+
+    window.customElements.define(OwoxTestTaskApp.is, OwoxTestTaskApp);
+  </script>
+</dom-module>
